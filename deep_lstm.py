@@ -40,6 +40,7 @@ class DeepLSTM(nn.Module):
     start = time.clock()
     print(" [*] Building Deep LSTM...")
     self.cell = LSTMCell(size, forget_bias=0.0)
+
     if not forward_only and self.keep_prob < 1:
       # self.cell = rnn_cell.DropoutWrapper(self.cell, output_keep_prob=keep_prob)
       ### TODO
@@ -47,7 +48,6 @@ class DeepLSTM(nn.Module):
       self.cell = d(self.cell)
     self.stacked_cell = MultiRNNCellWithSkipConn([self.cell] * depth)
 
-    # self.initial_state = self.stacked_cell.zero_state(batch_size, tf.float32)
     self.initial_state = self.stacked_cell.zero_state(batch_size, torch.float32)
 
   def prepare_model(self, data_dir, dataset_name, vocab_size):
@@ -57,14 +57,10 @@ class DeepLSTM(nn.Module):
 
     self.vocab_size = len(self.vocab)
 
-    #self.emb = tf.get_variable("emb", [self.vocab_size, self.size])
-    #self.emb = torch.randn((self.vocab_size, self.size), requires_grad=True)
     self.emb = nn.Embedding(self.vocab_size, self.size)
 
     # inputs
-    #self.inputs = tf.placeholder(tf.int32, [self.batch_size, self.max_nsteps])
     self.inputs = torch.IntTensor(self.batch_size, self.max_nsteps).zero_()
-    #embed_inputs = tf.nn.embedding_lookup(self.emb, tf.transpose(self.inputs))
     embed_inputs = self.emb(torch.transpose(self.inputs, 1, 0))
 
     #tf.histogram_summary("embed", self.emb)
@@ -75,56 +71,43 @@ class DeepLSTM(nn.Module):
     #                     tf.unpack(embed_inputs),
     #                     dtype=tf.float32,
     #                     initial_state=self.initial_state)
-     _, states = rnn.rnn(self.stacked_cell,
+    _, states = rnn.rnn(self.stacked_cell,
                         torch.unbind(embed_inputs),
                         dtype=torch.float32,
                         initial_state=self.initial_state)
-    #self.batch_states = tf.pack(states)
     self.batch_states = torch.stack(states)
 
-    #self.nstarts = tf.placeholder(tf.int32, [self.batch_size, 3])
     self.nstarts = torch.IntTensor(self.batch_size, 3).zero_()
     # outputs = tf.pack([tf.slice(self.batch_states, nstarts, [1, 1, self.output_size])
     #     for idx, nstarts in enumerate(tf.unpack(self.nstarts))])
     ### TODO
     outputs = torch.stack(self.batch_states[:2, :2, :self.output_size+1] for idx, nstarts in enumerate(torch.unbind(self.nstarts)))
 
-    #self.outputs = tf.reshape(outputs, [self.batch_size, self.output_size])
     self.outputs = outputs.view(self.batch_size, self.output_size).size()
 
-    #self.W = tf.get_variable("W", [self.vocab_size, self.output_size])
     self.W = torch.randn((self.vocab_size, self.output_size), requires_grad=True)
     # tf.histogram_summary("weights", self.W)
     # tf.histogram_summary("output", outputs)
     ### TODO
 
-    # self.y = tf.placeholder(tf.float32, [self.batch_size, self.vocab_size])
     # logits
     self.y = torch.FloatTensor(self.batch_size, self.vocab_size).zero_()
-    # self.y_ = tf.matmul(self.outputs, self.W, transpose_b=True)
     # labels
     self.y_ = torch.matmul(self.outputs, torch.transpose(self.W, 1, 0))
 
-    #self.loss = tf.nn.softmax_cross_entropy_with_logits(self.y_, self.y)
     loss_fn = torch.nn.CrossEntropyLoss()
     self.loss = loss_fn(self.y_, self.y)
     #tf.scalar_summary("loss", tf.reduce_mean(self.loss))
     ### TODO
 
-    # correct_prediction = tf.equal(tf.argmax(self.y, 1), tf.argmax(self.y_, 1))
     _, logits_indices = torch.max(self.y, 1)
     _, labels_indices = torch.max(self.y_, 1)
     x = list(logits_indices.size())[0]
     y = list(labels_indices.size())[0]
     correct_prediction = logits_indices.expand(x,y).eq(labels_indices.expand(x,y))
-    # self.accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"))
     self.accuracy = torch.mean(correct_prediction.type(torch.FloatTensor))
     
     #tf.scalar_summary("accuracy", self.accuracy)
     ### TODO
 
     print(" [*] Preparing model finished.")
-
-
-  def test(self, voab_size):
-    self.prepare_model(data_dir, dataset_name, vocab_size)
