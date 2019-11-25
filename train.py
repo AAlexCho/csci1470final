@@ -1,99 +1,72 @@
 
-#!/usr/bin/env python
-
-import logging
-import numpy
+import time
 import sys
-import os
-import importlib
+import numpy as np
+import torch as torch
+from torch.utils.tensorboard import SummaryWriter
+from utils import array_pad
+import DeepLSTM
 
+#from base_model import Model
+#from cells import LSTMCell, MultiRNNCellWithSkipConn
 
-try:
-    from blocks.extras.extensions.plot import Plot
-    plot_avail = True
-except ImportError:
-    plot_avail = False
-    print ("No plotting extension available.")
+#Changing imports to pytorch
 
+import torch.nn as nn
+import torch.optim as optim
 
-logging.basicConfig(level='INFO')
-logger = logging.getLogger(__name__)
+def train(self, model, vocab_size, epoch=25, data_dir="data", dataset_name="cnn"):
+    self.prepare_model(data_dir, dataset_name, vocab_size)
 
-sys.setrecursionlimit(500000)
+    y = np.zeros([self.batch_size, self.vocab_size])
 
-if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print >> sys.stderr, 'Usage: %s config' % sys.argv[0]
-        sys.exit(1)
-    model_name = sys.argv[1]
-    config = importlib.import_module('.%s' % model_name, 'config')
+    start_time = time.time()
+    loss = nn.CrossEntropyLoss()
 
-    # Build datastream
-    path = os.path.join(os.getenv("DATAPATH"), "deepmind-qa/cnn/questions/training")
-    valid_path = os.path.join(os.getenv("DATAPATH"), "deepmind-qa/cnn/questions/validation")
-    vocab_path = os.path.join(os.getenv("DATAPATH"), "deepmind-qa/cnn/stats/training/vocab.txt")
+    for epoch_idx in range(epoch):
 
-    ds, train_stream = data.setup_datastream(path, vocab_path, config)
-    _, valid_stream = data.setup_datastream(valid_path, vocab_path, config)
+        batch_stop = False
+        while True:
+            y.fill(0)
+            inputs, num_starts, answers = [], [], []
+            batch_idx = 0
+            while True:
+                try:
+                    (_, document, question, answer, _), data_idx, data_max_idx = data_loader.next()
+                except StopIteration:
+                    batch_stop = True
+                    break
 
-    dump_path = os.path.join("model_params", model_name+".pkl")
+            # [0] means splitter between d and q
+                data = [int(d) for d in document.split()] + [0] + \
+                    [int(q) for q in question.split() for q in question.split()]
 
-    # Build model
-    m = config.Model(config, ds.vocab_size)
+                if len(data) > self.max_nsteps:
+                    continue
 
-    # Build the Blocks stuff for training
-    model = Model(m.sgd_cost)
+                inputs.append(data)
+                num_starts.append(len(inputs[-1]) - 1)
+                y[batch_idx][int(answer)] = 1
 
-    algorithm = GradientDescent(cost=m.sgd_cost,
-                                step_rule=config.step_rule,
-                                parameters=model.parameters)
+                batch_idx += 1
+                if batch_idx == self.batch_size:
+                    break
+            if batch_stop:
+                break
 
-    extensions = [
-            TrainingDataMonitoring(
-                [v for l in m.monitor_vars for v in l],
-                prefix='train',
-                every_n_batches=config.print_freq)
-    ]
-    if config.save_freq is not None and dump_path is not None:
-        extensions += [
-            SaveLoadParams(path=dump_path,
-                           model=model,
-                           before_training=True,
-                           after_training=True,
-                           after_epoch=True,
-                           every_n_batches=config.save_freq)
-        ]
-    if valid_stream is not None and config.valid_freq != -1:
-        extensions += [
-            DataStreamMonitoring(
-                [v for l in m.monitor_vars_valid for v in l],
-                valid_stream,
-                prefix='valid',
-                every_n_batches=config.valid_freq),
-        ]
-    if plot_avail:
-        plot_channels = [['train_' + v.name for v in lt] + ['valid_' + v.name for v in lv]
-                         for lt, lv in zip(m.monitor_vars, m.monitor_vars_valid)]
-        extensions += [
-            Plot(document='deepmind_qa_'+model_name,
-                 channels=plot_channels,
-                 # server_url='http://localhost:5006/', # If you need, change this
-                 every_n_batches=config.print_freq)
-        ]
-    extensions += [
-            Printing(every_n_batches=config.print_freq,
-                     after_epoch=True),
-            ProgressBar()
-    ]
+            FORCE = False
+            if FORCE:
+                inputs = array_pad(inputs, self.max_nsteps, pad=-1, force=FORCE)
+                num_starts = np.where(inputs == -1)[1]
+                inputs[inputs == -1] = 0
+            else:
+                inputs = array_pad(inputs, self.max_nsteps, pad=0)
+            num_starts = [[num_starts, idx, 0] for idx, num_starts in enumerate(num_starts)]
 
-    main_loop = MainLoop(
-        model=model,
-        data_stream=train_stream,
-        algorithm=algorithm,
-        extensions=extensions
-    )
+            logits = model.prepareModel(data_dir, dataset_name, vocab_size)  # not probabilities!
+            los = loss(logits, torch.tensor(np.array(inputs)))
+            model.optimizer.zero_grad()
+            los.backward()
+            model.optimizer.step()  # can be thought of as gradient descent
 
-    # Run the model !
-    main_loop.run()
-    main_loop.profile.report()
 
