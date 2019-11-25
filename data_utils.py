@@ -4,13 +4,13 @@ import sys
 import time
 from glob import glob
 
+from gensim import corpora
 from tensorflow.python.platform import gfile
+from tqdm import tqdm
 
 import nltk
-from gensim import corpora
 from nltk.corpus import stopwords
 from nltk.tokenize import RegexpTokenizer
-from tqdm import tqdm
 
 tokenizer = RegexpTokenizer(r'\w+')
 
@@ -39,7 +39,7 @@ def basic_tokenizer(sentence):
     words = tokenizer.tokenize(sentence)
     for word in words:
         if word not in english_stopwords_set:
-            yield words
+            yield word
 
 
 def create_vocabulary(vocabulary_path, context, max_vocabulary_size,
@@ -132,7 +132,7 @@ def data_to_token_ids(data_path, target_path, vocab,
             if None, basic_tokenizer will be used.
         normalize_digits: Boolean; if true, all digits are replaced by 0s.
     """
-    with gfile.GFile(data_path, mode="r") as data_file:
+    with open(data_path, mode="r") as data_file:
         counter = 0
         results = []
         for line in data_file:
@@ -155,7 +155,8 @@ def data_to_token_ids(data_path, target_path, vocab,
             len_d, len_q = len(results[2].split()), len(results[4].split())
         except:
             return
-        with gfile.GFile("%s_%s" % (target_path, len_d + len_q), mode="w") as tokens_file:
+
+        with open(f"{target_path}_{len_d+len_q}", mode="w") as tokens_file:
             tokens_file.writelines(results)
 
 
