@@ -5,12 +5,12 @@ import time
 from glob import glob
 
 from gensim import corpora
-from tensorflow.python.platform import gfile
 from tqdm import tqdm
 
 import nltk
 from nltk.corpus import stopwords
 from nltk.tokenize import RegexpTokenizer
+from tensorflow.python.platform import gfile
 
 tokenizer = RegexpTokenizer(r'\w+')
 
@@ -179,7 +179,7 @@ def get_all_context(dir_name, context_fname):
     Combine all questions into a context
 
     A question is divided into 5 sections
-        where the second secion contains the qeustion
+        where the second section contains the qustion
         the last section contains identity to actual name mapping
     """
     with open(context_fname, 'w') as context:
@@ -193,6 +193,8 @@ def get_all_context(dir_name, context_fname):
                 for line in f:
                     if line[0] == '@' and ':' in line:
                         context.write(f"{line.replace(':', ' ').rstrip()} ")
+    with open(context_fname) as context:
+        return context.read()
 
 
 def questions_to_token_ids(data_path, vocab_fname, vocab_size):
